@@ -49,10 +49,33 @@ pip install -r requirements.txt
 
 ## 🚀 Uso
 
-### Ejecución básica
+### Opción 1: Interfaz Web (Recomendado) 🌐
+
+**Más fácil y visual** - Interfaz web completa con gráficos:
 
 ```bash
-python arbitrage_detector.py
+streamlit run web_app.py
+```
+
+Se abrirá automáticamente en `http://localhost:8501`
+
+**Características:**
+- 🎯 Botón para ejecutar análisis con un click
+- 📊 Gráficos interactivos (histogramas, barras)
+- 📈 Dashboard con métricas en tiempo real
+- 💾 Botones para descargar CSV/JSON
+- ⚙️ Configuración visual (sliders)
+
+Ver guía completa: [WEB_INTERFACE.md](WEB_INTERFACE.md)
+
+---
+
+### Opción 2: Línea de Comandos (CLI)
+
+**Para scripts y automatización:**
+
+```bash
+python3 arbitrage_detector.py
 ```
 
 El script automáticamente:
