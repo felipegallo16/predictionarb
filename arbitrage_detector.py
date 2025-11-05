@@ -5,16 +5,18 @@ Arbitrage Detector for Prediction Markets (Polymarket & Kalshi)
 Este script detecta oportunidades de arbitraje entre mercados de predicción
 comparando probabilidades implícitas en Polymarket y Kalshi.
 
+SOLO USA DATOS REALES - Sin simulaciones ni datos mock.
+
 Autor: Claude
-Versión: 1.0
+Versión: 2.0
 """
 
-import httpx
+from py_clob_client.client import ClobClient
+import requests
 import pandas as pd
 from rapidfuzz import fuzz
 from typing import List, Dict, Tuple, Optional
 import time
-import json
 from datetime import datetime
 from tabulate import tabulate
 import logging
@@ -37,169 +39,107 @@ logger = logging.getLogger(__name__)
 
 
 class PolymarketClient:
-    """Cliente para interactuar con la API de Polymarket"""
+    """Cliente para interactuar con la API de Polymarket usando py-clob-client oficial"""
 
-    BASE_URL = "https://gamma-api.polymarket.com"
+    def __init__(self):
+        """Inicializa el cliente de Polymarket (sin autenticación para datos públicos)"""
+        self.client = ClobClient("https://clob.polymarket.com")
+        logger.info("✓ Cliente Polymarket inicializado")
 
-    def __init__(self, use_demo_data: bool = False):
-        self.client = httpx.Client(timeout=30.0, follow_redirects=True)
-        self.use_demo_data = use_demo_data
-
-    def get_demo_markets(self) -> List[Dict]:
+    def get_markets(self) -> List[Dict]:
         """
-        Retorna datos de demostración realistas basados en mercados reales
-        """
-        logger.info("Usando datos de demostración de Polymarket...")
-        return [
-            {
-                "id": "pm_trump_2024",
-                "question": "Will Donald Trump win the 2024 US Presidential Election?",
-                "slug": "trump-2024-election",
-                "tokens": [{"outcome": "Yes", "price": 0.58}],
-                "volume": 8450230.0,
-                "liquidity": 1250000.0,
-                "endDate": "2024-11-06T00:00:00Z"
-            },
-            {
-                "id": "pm_recession_2025",
-                "question": "Will the US enter a recession by December 31, 2025?",
-                "slug": "us-recession-2025",
-                "tokens": [{"outcome": "Yes", "price": 0.32}],
-                "volume": 2100450.0,
-                "liquidity": 450000.0,
-                "endDate": "2025-12-31T23:59:59Z"
-            },
-            {
-                "id": "pm_bitcoin_100k",
-                "question": "Will Bitcoin reach $100,000 by end of 2025?",
-                "slug": "bitcoin-100k-2025",
-                "tokens": [{"outcome": "Yes", "price": 0.45}],
-                "volume": 5200000.0,
-                "liquidity": 890000.0,
-                "endDate": "2025-12-31T23:59:59Z"
-            },
-            {
-                "id": "pm_ai_breakthrough",
-                "question": "Will AGI be achieved by end of 2026?",
-                "slug": "agi-2026",
-                "tokens": [{"outcome": "Yes", "price": 0.15}],
-                "volume": 890000.0,
-                "liquidity": 120000.0,
-                "endDate": "2026-12-31T23:59:59Z"
-            },
-            {
-                "id": "pm_mars_mission",
-                "question": "Will SpaceX land humans on Mars by 2030?",
-                "slug": "spacex-mars-2030",
-                "tokens": [{"outcome": "Yes", "price": 0.28}],
-                "volume": 1200000.0,
-                "liquidity": 350000.0,
-                "endDate": "2030-12-31T23:59:59Z"
-            },
-            {
-                "id": "pm_rate_cut",
-                "question": "Will the Fed cut interest rates in Q1 2026?",
-                "slug": "fed-rate-cut-q1-2026",
-                "tokens": [{"outcome": "Yes", "price": 0.67}],
-                "volume": 3400000.0,
-                "liquidity": 680000.0,
-                "endDate": "2026-03-31T23:59:59Z"
-            }
-        ]
-
-    def get_markets(self, limit: int = 100) -> List[Dict]:
-        """
-        Obtiene todos los mercados activos de Polymarket
+        Obtiene TODOS los mercados activos de Polymarket usando la API real
 
         Returns:
-            Lista de mercados con su información
+            Lista de mercados con su información real
         """
-        if self.use_demo_data:
-            return self.get_demo_markets()
-
-        markets = []
-        offset = 0
+        markets_list = []
+        next_cursor = None
 
         try:
+            logger.info("Obteniendo mercados reales de Polymarket...")
+
             while True:
-                url = f"{self.BASE_URL}/markets"
-                params = {
-                    'limit': limit,
-                    'offset': offset,
-                    'closed': 'false',  # Solo mercados abiertos
-                    'active': 'true'
-                }
+                # Hacer llamada a la API real
+                if next_cursor is None:
+                    response = self.client.get_markets()
+                else:
+                    response = self.client.get_markets(next_cursor=next_cursor)
 
-                logger.info(f"Fetching Polymarket markets (offset: {offset})...")
-                response = self.client.get(url, params=params)
-                response.raise_for_status()
-
-                data = response.json()
-
-                if not data:
+                # Verificar respuesta
+                if 'data' not in response or not response['data']:
                     break
 
-                markets.extend(data)
+                # Agregar mercados
+                markets_list.extend(response['data'])
+                logger.info(f"  Obtenidos {len(response['data'])} mercados...")
 
-                # Si recibimos menos del límite, no hay más páginas
-                if len(data) < limit:
+                # Verificar si hay más páginas
+                next_cursor = response.get('next_cursor')
+                if not next_cursor:
                     break
 
-                offset += limit
-                time.sleep(0.5)  # Rate limiting
+                time.sleep(0.3)  # Rate limiting respetuoso
 
-            logger.info(f"✓ Polymarket: {len(markets)} mercados activos encontrados")
-            return markets
+            logger.info(f"✓ Polymarket: {len(markets_list)} mercados reales obtenidos")
+            return markets_list
 
-        except httpx.HTTPError as e:
-            logger.warning(f"No se pudo conectar a Polymarket API: {e.response.status_code if hasattr(e, 'response') else 'Error'}")
-            logger.info("Cambiando a modo demostración...")
-            return self.get_demo_markets()
+        except Exception as e:
+            logger.error(f"Error al obtener mercados de Polymarket: {e}")
+            raise Exception(f"No se pudieron obtener datos reales de Polymarket: {e}")
 
     def parse_market(self, market: Dict) -> Optional[Dict]:
         """
         Parsea un mercado de Polymarket al formato estándar
 
         Args:
-            market: Diccionario con datos del mercado
+            market: Diccionario con datos del mercado real
 
         Returns:
             Diccionario con formato estándar o None si hay error
         """
         try:
-            # Polymarket puede tener múltiples outcomes, nos enfocamos en binarios
+            # Validar campos requeridos
             if not market.get('question') or not market.get('tokens'):
                 return None
 
-            # Para mercados binarios, buscamos el outcome "Yes"
-            yes_price = None
-            volume = 0
-
-            # Los tokens contienen la información de precio
-            for token in market.get('tokens', []):
-                if token.get('outcome', '').lower() in ['yes', 'y']:
-                    yes_price = float(token.get('price', 0))
-
-            # Si no encontramos precio Yes, intentar con el primer token
-            if yes_price is None and len(market.get('tokens', [])) > 0:
-                yes_price = float(market['tokens'][0].get('price', 0))
-
-            if yes_price is None:
+            # Solo mercados activos y abiertos
+            if market.get('closed', True) or not market.get('active', False):
                 return None
 
-            # Volume y liquidez
+            # Para mercados binarios, buscamos el outcome "Yes"
+            yes_token = None
+            for token in market.get('tokens', []):
+                if token.get('outcome', '').lower() in ['yes', 'y']:
+                    yes_token = token
+                    break
+
+            # Si no hay token Yes, usar el primero
+            if not yes_token and len(market.get('tokens', [])) > 0:
+                yes_token = market['tokens'][0]
+
+            if not yes_token:
+                return None
+
+            # Precio del token (ya viene como probabilidad 0-1)
+            yes_price = float(yes_token.get('price', 0))
+
+            if yes_price <= 0 or yes_price >= 1:
+                return None
+
+            # Extraer volumen y liquidez
             volume = float(market.get('volume', 0))
             liquidity = float(market.get('liquidity', 0))
 
             return {
                 'platform': 'Polymarket',
                 'title': market['question'].strip(),
-                'prob_yes': yes_price,  # Ya viene como probabilidad (0-1)
+                'prob_yes': yes_price,
                 'prob_no': 1 - yes_price,
                 'volume': volume,
                 'liquidity': liquidity,
-                'end_date': market.get('endDate', market.get('end_date_iso', 'N/A')),
-                'market_id': market.get('id', ''),
+                'end_date': market.get('end_date_iso', market.get('endDate', 'N/A')),
+                'market_id': market.get('condition_id', market.get('id', '')),
                 'url': f"https://polymarket.com/event/{market.get('slug', '')}"
             }
 
@@ -209,92 +149,32 @@ class PolymarketClient:
 
 
 class KalshiClient:
-    """Cliente para interactuar con la API de Kalshi"""
+    """Cliente para interactuar con la API pública de Kalshi"""
 
-    BASE_URL = "https://trading-api.kalshi.com/trade-api/v2"
+    # API pública sin autenticación
+    BASE_URL = "https://api.elections.kalshi.com/trade-api/v2"
 
-    def __init__(self, use_demo_data: bool = False):
-        self.client = httpx.Client(timeout=30.0, follow_redirects=True)
-        self.use_demo_data = use_demo_data
+    def __init__(self):
+        """Inicializa el cliente de Kalshi (sin autenticación para datos públicos)"""
+        self.session = requests.Session()
+        logger.info("✓ Cliente Kalshi inicializado")
 
-    def get_demo_markets(self) -> List[Dict]:
+    def get_markets(self) -> List[Dict]:
         """
-        Retorna datos de demostración realistas basados en mercados reales
-        """
-        logger.info("Usando datos de demostración de Kalshi...")
-        return [
-            {
-                "ticker": "TRUMP2024",
-                "title": "Will Donald Trump win the 2024 Presidential Election?",
-                "yes_bid": 53,  # En centavos
-                "last_price": 53,
-                "volume": 6230000.0,
-                "open_interest": 980000.0,
-                "expiration_time": "2024-11-06T00:00:00Z"
-            },
-            {
-                "ticker": "USRECESSION-25",
-                "title": "Will there be a US recession by the end of 2025?",
-                "yes_bid": 29,
-                "last_price": 29,
-                "volume": 1890000.0,
-                "open_interest": 420000.0,
-                "expiration_time": "2025-12-31T23:59:59Z"
-            },
-            {
-                "ticker": "BTC100K-25",
-                "title": "Will Bitcoin reach $100,000 by end of 2025?",
-                "yes_bid": 51,
-                "last_price": 51,
-                "volume": 4100000.0,
-                "open_interest": 750000.0,
-                "expiration_time": "2025-12-31T23:59:59Z"
-            },
-            {
-                "ticker": "AGI-2026",
-                "title": "Will Artificial General Intelligence be achieved by 2026?",
-                "yes_bid": 8,
-                "last_price": 8,
-                "volume": 520000.0,
-                "open_interest": 85000.0,
-                "expiration_time": "2026-12-31T23:59:59Z"
-            },
-            {
-                "ticker": "MARS-2030",
-                "title": "Will humans land on Mars by 2030?",
-                "yes_bid": 35,
-                "last_price": 35,
-                "volume": 980000.0,
-                "open_interest": 280000.0,
-                "expiration_time": "2030-12-31T23:59:59Z"
-            },
-            {
-                "ticker": "FEDCUT-Q126",
-                "title": "Will the Federal Reserve cut rates in Q1 2026?",
-                "yes_bid": 72,
-                "last_price": 72,
-                "volume": 2800000.0,
-                "open_interest": 590000.0,
-                "expiration_time": "2026-03-31T23:59:59Z"
-            }
-        ]
-
-    def get_markets(self, limit: int = 200) -> List[Dict]:
-        """
-        Obtiene todos los mercados activos de Kalshi
+        Obtiene TODOS los mercados activos de Kalshi usando la API pública real
 
         Returns:
-            Lista de mercados con su información
+            Lista de mercados con su información real
         """
-        if self.use_demo_data:
-            return self.get_demo_markets()
-
-        markets = []
+        markets_list = []
         cursor = None
+        limit = 1000  # Máximo permitido
 
         try:
+            logger.info("Obteniendo mercados reales de Kalshi...")
+
             while True:
-                url = f"{self.BASE_URL}/markets"
+                # Preparar parámetros
                 params = {
                     'limit': limit,
                     'status': 'open'
@@ -303,50 +183,68 @@ class KalshiClient:
                 if cursor:
                     params['cursor'] = cursor
 
-                logger.info(f"Fetching Kalshi markets (cursor: {cursor})...")
-                response = self.client.get(url, params=params)
+                # Llamada a la API real
+                url = f"{self.BASE_URL}/markets"
+                response = self.session.get(url, params=params, timeout=30)
                 response.raise_for_status()
 
                 data = response.json()
 
-                if 'markets' in data:
-                    markets.extend(data['markets'])
+                # Verificar respuesta
+                if 'markets' not in data or not data['markets']:
+                    break
+
+                # Agregar mercados
+                markets_list.extend(data['markets'])
+                logger.info(f"  Obtenidos {len(data['markets'])} mercados...")
 
                 # Verificar si hay más páginas
                 cursor = data.get('cursor')
                 if not cursor:
                     break
 
-                time.sleep(0.5)  # Rate limiting
+                time.sleep(0.3)  # Rate limiting respetuoso
 
-            logger.info(f"✓ Kalshi: {len(markets)} mercados activos encontrados")
-            return markets
+            logger.info(f"✓ Kalshi: {len(markets_list)} mercados reales obtenidos")
+            return markets_list
 
-        except httpx.HTTPError as e:
-            logger.warning(f"No se pudo conectar a Kalshi API: {e.response.status_code if hasattr(e, 'response') else 'Error'}")
-            logger.info("Cambiando a modo demostración...")
-            return self.get_demo_markets()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error al obtener mercados de Kalshi: {e}")
+            raise Exception(f"No se pudieron obtener datos reales de Kalshi: {e}")
 
     def parse_market(self, market: Dict) -> Optional[Dict]:
         """
         Parsea un mercado de Kalshi al formato estándar
 
         Args:
-            market: Diccionario con datos del mercado
+            market: Diccionario con datos del mercado real
 
         Returns:
             Diccionario con formato estándar o None si hay error
         """
         try:
-            if not market.get('title'):
+            if not market.get('title') or not market.get('ticker'):
                 return None
 
-            # Kalshi usa centavos (0-100), convertir a probabilidad (0-1)
+            # Solo mercados abiertos
+            if market.get('status') != 'open':
+                return None
+
+            # Obtener precio Yes (en centavos, convertir a probabilidad)
+            # Kalshi usa yes_bid, yes_ask, last_price
             yes_price_cents = market.get('yes_bid', market.get('last_price', 0))
+
+            if yes_price_cents is None:
+                return None
+
             yes_price = float(yes_price_cents) / 100.0
 
+            if yes_price <= 0 or yes_price >= 1:
+                return None
+
+            # Volumen y open interest
             volume = float(market.get('volume', 0))
-            liquidity = float(market.get('open_interest', 0))
+            open_interest = float(market.get('open_interest', 0))
 
             return {
                 'platform': 'Kalshi',
@@ -354,10 +252,10 @@ class KalshiClient:
                 'prob_yes': yes_price,
                 'prob_no': 1 - yes_price,
                 'volume': volume,
-                'liquidity': liquidity,
+                'liquidity': open_interest,
                 'end_date': market.get('expiration_time', market.get('close_time', 'N/A')),
-                'market_id': market.get('ticker', market.get('id', '')),
-                'url': f"https://kalshi.com/markets/{market.get('ticker', '')}"
+                'market_id': market['ticker'],
+                'url': f"https://kalshi.com/markets/{market['ticker']}"
             }
 
         except (KeyError, ValueError, TypeError) as e:
@@ -366,48 +264,48 @@ class KalshiClient:
 
 
 class ArbitrageDetector:
-    """Detector de oportunidades de arbitraje entre plataformas"""
+    """Detector de oportunidades de arbitraje entre plataformas - SOLO DATOS REALES"""
 
-    def __init__(self, similarity_threshold: float = 80.0, use_demo_data: bool = False):
+    def __init__(self, similarity_threshold: float = 80.0):
         """
         Inicializa el detector
 
         Args:
             similarity_threshold: Umbral mínimo de similitud para emparejar mercados (0-100)
-            use_demo_data: Si True, usa datos de demostración en lugar de APIs reales
         """
         self.similarity_threshold = similarity_threshold
-        self.use_demo_data = use_demo_data
-        self.polymarket = PolymarketClient(use_demo_data=use_demo_data)
-        self.kalshi = KalshiClient(use_demo_data=use_demo_data)
+        self.polymarket = PolymarketClient()
+        self.kalshi = KalshiClient()
 
     def fetch_all_markets(self) -> Tuple[List[Dict], List[Dict]]:
         """
-        Obtiene todos los mercados de ambas plataformas
+        Obtiene todos los mercados REALES de ambas plataformas
 
         Returns:
             Tupla (mercados_polymarket, mercados_kalshi)
         """
         logger.info("\n" + "="*60)
-        logger.info("OBTENIENDO MERCADOS DE AMBAS PLATAFORMAS")
+        logger.info("OBTENIENDO MERCADOS REALES DE AMBAS PLATAFORMAS")
         logger.info("="*60 + "\n")
 
-        # Obtener mercados raw
+        # Obtener mercados reales
         poly_markets_raw = self.polymarket.get_markets()
         kalshi_markets_raw = self.kalshi.get_markets()
 
         # Parsear a formato estándar
-        poly_markets = [
-            self.polymarket.parse_market(m) for m in poly_markets_raw
-        ]
-        poly_markets = [m for m in poly_markets if m is not None]
+        poly_markets = []
+        for m in poly_markets_raw:
+            parsed = self.polymarket.parse_market(m)
+            if parsed:
+                poly_markets.append(parsed)
 
-        kalshi_markets = [
-            self.kalshi.parse_market(m) for m in kalshi_markets_raw
-        ]
-        kalshi_markets = [m for m in kalshi_markets if m is not None]
+        kalshi_markets = []
+        for m in kalshi_markets_raw:
+            parsed = self.kalshi.parse_market(m)
+            if parsed:
+                kalshi_markets.append(parsed)
 
-        logger.info(f"\n✓ Total mercados parseados:")
+        logger.info(f"\n✓ Total mercados reales parseados:")
         logger.info(f"  - Polymarket: {len(poly_markets)}")
         logger.info(f"  - Kalshi: {len(kalshi_markets)}\n")
 
@@ -424,7 +322,6 @@ class ArbitrageDetector:
         Returns:
             Score de similitud (0-100)
         """
-        # Usar token_sort_ratio que es más robusto a orden de palabras
         return fuzz.token_sort_ratio(title1.lower(), title2.lower())
 
     def match_markets(
@@ -516,7 +413,7 @@ class ArbitrageDetector:
             total_liquidity = poly['liquidity'] + kalshi['liquidity']
 
             opportunities.append({
-                'Mercado': poly['title'][:60],  # Limitar longitud
+                'Mercado': poly['title'][:80],  # Limitar longitud
                 'Similitud (%)': f"{match['similarity_score']:.1f}",
                 'Prob Yes Poly': f"{prob_yes_poly:.3f}",
                 'Prob No Kalshi': f"{prob_no_kalshi:.3f}",
@@ -633,7 +530,7 @@ class ArbitrageDetector:
 
     def run(self, export_csv: bool = True, export_json: bool = True, top_n: int = 20):
         """
-        Ejecuta el detector completo
+        Ejecuta el detector completo con DATOS REALES ÚNICAMENTE
 
         Args:
             export_csv: Si exportar resultados a CSV
@@ -646,15 +543,10 @@ class ArbitrageDetector:
         print(f"DETECTOR DE ARBITRAJE - POLYMARKET vs KALSHI")
         print(f"{'='*80}{Style.RESET_ALL}\n")
         print(f"Inicio: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-
-        if self.use_demo_data:
-            print(f"{Fore.YELLOW}⚠ MODO DEMOSTRACIÓN: Usando datos simulados{Style.RESET_ALL}")
-            print(f"  (Las APIs tienen protección Cloudflare activa)\n")
-        else:
-            print(f"{Fore.GREEN}✓ Intentando conectar a APIs en vivo...{Style.RESET_ALL}\n")
+        print(f"{Fore.GREEN}✓ Usando DATOS REALES de APIs en vivo{Style.RESET_ALL}\n")
 
         try:
-            # 1. Obtener mercados
+            # 1. Obtener mercados REALES
             poly_markets, kalshi_markets = self.fetch_all_markets()
 
             if not poly_markets or not kalshi_markets:
@@ -686,32 +578,17 @@ class ArbitrageDetector:
 
         except Exception as e:
             logger.error(f"Error durante la ejecución: {e}", exc_info=True)
+            raise
 
 
 def main():
     """Función principal"""
-    import sys
-
     # Configuración
     SIMILARITY_THRESHOLD = 80.0  # Umbral de similitud (0-100)
     TOP_N = 20  # Número de mejores oportunidades a mostrar
 
-    # Detectar si usar modo demo
-    # Las APIs están protegidas por Cloudflare, por lo que usaremos modo demo por defecto
-    USE_DEMO = True
-
-    # Para intentar usar APIs reales (requiere bypass de Cloudflare o credenciales):
-    # USE_DEMO = False
-    # O ejecutar: python arbitrage_detector.py --live
-
-    if len(sys.argv) > 1 and sys.argv[1] == '--live':
-        USE_DEMO = False
-
-    # Crear detector
-    detector = ArbitrageDetector(
-        similarity_threshold=SIMILARITY_THRESHOLD,
-        use_demo_data=USE_DEMO
-    )
+    # Crear detector (SOLO DATOS REALES)
+    detector = ArbitrageDetector(similarity_threshold=SIMILARITY_THRESHOLD)
 
     # Ejecutar
     detector.run(export_csv=True, export_json=True, top_n=TOP_N)
