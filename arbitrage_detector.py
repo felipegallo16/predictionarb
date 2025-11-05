@@ -55,24 +55,39 @@ class PolymarketClient:
         """
         markets_list = []
         next_cursor = None
+        max_pages = 50  # Límite de seguridad para evitar loops infinitos
+        page_count = 0
 
         try:
             logger.info("Obteniendo mercados reales de Polymarket...")
 
-            while True:
-                # Hacer llamada a la API real
-                if next_cursor is None:
-                    response = self.client.get_markets()
-                else:
-                    response = self.client.get_markets(next_cursor=next_cursor)
+            while page_count < max_pages:
+                page_count += 1
+
+                # Hacer llamada a la API real con timeout corto
+                try:
+                    if next_cursor is None:
+                        response = self.client.get_markets()
+                    else:
+                        response = self.client.get_markets(next_cursor=next_cursor)
+                except Exception as e:
+                    logger.error(f"Error en página {page_count}: {e}")
+                    if page_count == 1:
+                        # Si falla la primera página, propagar el error
+                        raise
+                    else:
+                        # Si ya obtuvimos algunos mercados, continuar con lo que tenemos
+                        logger.warning(f"Continuando con {len(markets_list)} mercados obtenidos hasta ahora")
+                        break
 
                 # Verificar respuesta
                 if 'data' not in response or not response['data']:
                     break
 
                 # Agregar mercados
+                batch_size = len(response['data'])
                 markets_list.extend(response['data'])
-                logger.info(f"  Obtenidos {len(response['data'])} mercados...")
+                logger.info(f"  Página {page_count}: {batch_size} mercados (total: {len(markets_list)})")
 
                 # Verificar si hay más páginas
                 next_cursor = response.get('next_cursor')
@@ -81,7 +96,7 @@ class PolymarketClient:
 
                 time.sleep(0.3)  # Rate limiting respetuoso
 
-            logger.info(f"✓ Polymarket: {len(markets_list)} mercados reales obtenidos")
+            logger.info(f"✓ Polymarket: {len(markets_list)} mercados reales obtenidos en {page_count} páginas")
             return markets_list
 
         except Exception as e:
@@ -169,11 +184,15 @@ class KalshiClient:
         markets_list = []
         cursor = None
         limit = 1000  # Máximo permitido
+        max_pages = 20  # Límite de seguridad para evitar loops infinitos
+        page_count = 0
 
         try:
             logger.info("Obteniendo mercados reales de Kalshi...")
 
-            while True:
+            while page_count < max_pages:
+                page_count += 1
+
                 # Preparar parámetros
                 params = {
                     'limit': limit,
@@ -183,10 +202,20 @@ class KalshiClient:
                 if cursor:
                     params['cursor'] = cursor
 
-                # Llamada a la API real
-                url = f"{self.BASE_URL}/markets"
-                response = self.session.get(url, params=params, timeout=30)
-                response.raise_for_status()
+                # Llamada a la API real con timeout reducido
+                try:
+                    url = f"{self.BASE_URL}/markets"
+                    response = self.session.get(url, params=params, timeout=10)
+                    response.raise_for_status()
+                except requests.exceptions.RequestException as e:
+                    logger.error(f"Error en página {page_count}: {e}")
+                    if page_count == 1:
+                        # Si falla la primera página, propagar el error
+                        raise
+                    else:
+                        # Si ya obtuvimos algunos mercados, continuar con lo que tenemos
+                        logger.warning(f"Continuando con {len(markets_list)} mercados obtenidos hasta ahora")
+                        break
 
                 data = response.json()
 
@@ -195,8 +224,9 @@ class KalshiClient:
                     break
 
                 # Agregar mercados
+                batch_size = len(data['markets'])
                 markets_list.extend(data['markets'])
-                logger.info(f"  Obtenidos {len(data['markets'])} mercados...")
+                logger.info(f"  Página {page_count}: {batch_size} mercados (total: {len(markets_list)})")
 
                 # Verificar si hay más páginas
                 cursor = data.get('cursor')
@@ -205,7 +235,7 @@ class KalshiClient:
 
                 time.sleep(0.3)  # Rate limiting respetuoso
 
-            logger.info(f"✓ Kalshi: {len(markets_list)} mercados reales obtenidos")
+            logger.info(f"✓ Kalshi: {len(markets_list)} mercados reales obtenidos en {page_count} páginas")
             return markets_list
 
         except requests.exceptions.RequestException as e:
