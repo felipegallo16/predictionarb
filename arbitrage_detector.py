@@ -11,7 +11,6 @@ Autor: Claude
 Versión: 2.0
 """
 
-from py_clob_client.client import ClobClient
 import requests
 import pandas as pd
 from rapidfuzz import fuzz
@@ -21,6 +20,7 @@ from datetime import datetime
 from tabulate import tabulate
 import logging
 from colorama import Fore, Style, init
+import signal
 
 # Inicializar colorama para salida con colores
 init(autoreset=True)
@@ -39,11 +39,18 @@ logger = logging.getLogger(__name__)
 
 
 class PolymarketClient:
-    """Cliente para interactuar con la API de Polymarket usando py-clob-client oficial"""
+    """Cliente para interactuar con la API de Polymarket - Llamadas HTTP directas"""
+
+    # Usar Gamma API que es más accesible
+    BASE_URL = "https://gamma-api.polymarket.com"
 
     def __init__(self):
         """Inicializa el cliente de Polymarket (sin autenticación para datos públicos)"""
-        self.client = ClobClient("https://clob.polymarket.com")
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            'Accept': 'application/json'
+        })
         logger.info("✓ Cliente Polymarket inicializado")
 
     def get_markets(self) -> List[Dict]:
@@ -54,54 +61,84 @@ class PolymarketClient:
             Lista de mercados con su información real
         """
         markets_list = []
-        next_cursor = None
-        max_pages = 50  # Límite de seguridad para evitar loops infinitos
+        offset = 0
+        limit = 100
+        max_pages = 30  # Límite de seguridad
         page_count = 0
 
         try:
-            logger.info("Obteniendo mercados reales de Polymarket...")
+            logger.info("Obteniendo mercados reales de Polymarket (Gamma API)...")
 
             while page_count < max_pages:
                 page_count += 1
 
-                # Hacer llamada a la API real con timeout corto
+                # Hacer llamada HTTP directa con timeout CORTO
                 try:
-                    if next_cursor is None:
-                        response = self.client.get_markets()
-                    else:
-                        response = self.client.get_markets(next_cursor=next_cursor)
-                except Exception as e:
-                    logger.error(f"Error en página {page_count}: {e}")
+                    url = f"{self.BASE_URL}/markets"
+                    params = {
+                        'limit': limit,
+                        'offset': offset,
+                        'closed': 'false'
+                    }
+
+                    logger.info(f"  Solicitando página {page_count} (offset: {offset})...")
+
+                    # TIMEOUT AGRESIVO: 5 segundos
+                    response = self.session.get(
+                        url,
+                        params=params,
+                        timeout=5  # 5 segundos máximo
+                    )
+
+                    logger.info(f"  Respuesta recibida: {response.status_code}")
+
+                    # Si es 403 o error, fallar inmediatamente
+                    if response.status_code == 403:
+                        raise Exception(f"403 Forbidden - API bloqueada (Cloudflare/geo-restricción)")
+
+                    response.raise_for_status()
+                    data = response.json()
+
+                except requests.exceptions.Timeout:
+                    logger.error(f"⏱️ Timeout en página {page_count} (>5 segundos)")
                     if page_count == 1:
-                        # Si falla la primera página, propagar el error
+                        raise Exception("Timeout en primera página - API muy lenta o bloqueada")
+                    else:
+                        logger.warning(f"Continuando con {len(markets_list)} mercados")
+                        break
+
+                except requests.exceptions.RequestException as e:
+                    logger.error(f"❌ Error HTTP en página {page_count}: {e}")
+                    if page_count == 1:
                         raise
                     else:
-                        # Si ya obtuvimos algunos mercados, continuar con lo que tenemos
-                        logger.warning(f"Continuando con {len(markets_list)} mercados obtenidos hasta ahora")
+                        logger.warning(f"Continuando con {len(markets_list)} mercados")
                         break
 
                 # Verificar respuesta
-                if 'data' not in response or not response['data']:
+                if not isinstance(data, list) or len(data) == 0:
+                    logger.info(f"  No hay más mercados (página {page_count})")
                     break
 
                 # Agregar mercados
-                batch_size = len(response['data'])
-                markets_list.extend(response['data'])
-                logger.info(f"  Página {page_count}: {batch_size} mercados (total: {len(markets_list)})")
+                batch_size = len(data)
+                markets_list.extend(data)
+                logger.info(f"  ✓ Página {page_count}: {batch_size} mercados (total: {len(markets_list)})")
 
-                # Verificar si hay más páginas
-                next_cursor = response.get('next_cursor')
-                if not next_cursor:
+                # Si recibimos menos del límite, no hay más páginas
+                if batch_size < limit:
+                    logger.info(f"  Última página alcanzada ({batch_size} < {limit})")
                     break
 
-                time.sleep(0.3)  # Rate limiting respetuoso
+                offset += limit
+                time.sleep(0.2)  # Rate limiting mínimo
 
-            logger.info(f"✓ Polymarket: {len(markets_list)} mercados reales obtenidos en {page_count} páginas")
+            logger.info(f"✅ Polymarket: {len(markets_list)} mercados en {page_count} páginas")
             return markets_list
 
         except Exception as e:
-            logger.error(f"Error al obtener mercados de Polymarket: {e}")
-            raise Exception(f"No se pudieron obtener datos reales de Polymarket: {e}")
+            logger.error(f"💥 Error fatal en Polymarket: {e}")
+            raise Exception(f"No se pudieron obtener datos de Polymarket: {e}")
 
     def parse_market(self, market: Dict) -> Optional[Dict]:
         """
@@ -202,19 +239,36 @@ class KalshiClient:
                 if cursor:
                     params['cursor'] = cursor
 
-                # Llamada a la API real con timeout reducido
+                # Llamada a la API real con timeout CORTO
                 try:
                     url = f"{self.BASE_URL}/markets"
-                    response = self.session.get(url, params=params, timeout=10)
+
+                    logger.info(f"  Solicitando página {page_count} de Kalshi...")
+
+                    # TIMEOUT AGRESIVO: 5 segundos
+                    response = self.session.get(url, params=params, timeout=5)
+
+                    logger.info(f"  Respuesta recibida: {response.status_code}")
+
+                    if response.status_code == 403:
+                        raise Exception(f"403 Forbidden - API bloqueada")
+
                     response.raise_for_status()
-                except requests.exceptions.RequestException as e:
-                    logger.error(f"Error en página {page_count}: {e}")
+
+                except requests.exceptions.Timeout:
+                    logger.error(f"⏱️ Timeout en página {page_count} (>5 segundos)")
                     if page_count == 1:
-                        # Si falla la primera página, propagar el error
+                        raise Exception("Timeout en primera página - API muy lenta")
+                    else:
+                        logger.warning(f"Continuando con {len(markets_list)} mercados")
+                        break
+
+                except requests.exceptions.RequestException as e:
+                    logger.error(f"❌ Error HTTP en página {page_count}: {e}")
+                    if page_count == 1:
                         raise
                     else:
-                        # Si ya obtuvimos algunos mercados, continuar con lo que tenemos
-                        logger.warning(f"Continuando con {len(markets_list)} mercados obtenidos hasta ahora")
+                        logger.warning(f"Continuando con {len(markets_list)} mercados")
                         break
 
                 data = response.json()
