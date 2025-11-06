@@ -39,10 +39,10 @@ logger = logging.getLogger(__name__)
 
 
 class PolymarketClient:
-    """Cliente para interactuar con la API de Polymarket - Llamadas HTTP directas"""
+    """Cliente para interactuar con la API de Polymarket - CLOB API oficial"""
 
-    # Usar Gamma API que es más accesible
-    BASE_URL = "https://gamma-api.polymarket.com"
+    # CLOB API oficial de Polymarket
+    BASE_URL = "https://clob.polymarket.com"
 
     def __init__(self):
         """Inicializa el cliente de Polymarket (sin autenticación para datos públicos)"""
@@ -51,56 +51,52 @@ class PolymarketClient:
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
             'Accept': 'application/json'
         })
-        logger.info("✓ Cliente Polymarket inicializado")
+        logger.info("✓ Cliente Polymarket inicializado (CLOB API)")
 
     def get_markets(self) -> List[Dict]:
         """
-        Obtiene TODOS los mercados activos de Polymarket usando la API real
+        Obtiene TODOS los mercados activos de Polymarket usando CLOB API
 
         Returns:
             Lista de mercados con su información real
         """
         markets_list = []
-        offset = 0
-        limit = 100
+        next_cursor = ""
         max_pages = 30  # Límite de seguridad
         page_count = 0
 
         try:
-            logger.info("Obteniendo mercados reales de Polymarket (Gamma API)...")
+            logger.info("Obteniendo mercados reales de Polymarket (CLOB API)...")
 
             while page_count < max_pages:
                 page_count += 1
 
                 # Hacer llamada HTTP directa con timeout CORTO
                 try:
+                    # Endpoint oficial: /markets con next_cursor para paginación
                     url = f"{self.BASE_URL}/markets"
-                    params = {
-                        'limit': limit,
-                        'offset': offset,
-                        'closed': 'false'
-                    }
+                    params = {'next_cursor': next_cursor} if next_cursor else {}
 
-                    logger.info(f"  Solicitando página {page_count} (offset: {offset})...")
+                    logger.info(f"  Solicitando página {page_count}...")
 
-                    # TIMEOUT AGRESIVO: 5 segundos
+                    # TIMEOUT: 8 segundos (un poco más generoso para primera llamada)
                     response = self.session.get(
                         url,
                         params=params,
-                        timeout=5  # 5 segundos máximo
+                        timeout=8
                     )
 
                     logger.info(f"  Respuesta recibida: {response.status_code}")
 
                     # Si es 403 o error, fallar inmediatamente
                     if response.status_code == 403:
-                        raise Exception(f"403 Forbidden - API bloqueada (Cloudflare/geo-restricción)")
+                        raise Exception(f"403 Forbidden - API bloqueada desde tu ubicación. Intenta con VPN.")
 
                     response.raise_for_status()
                     data = response.json()
 
                 except requests.exceptions.Timeout:
-                    logger.error(f"⏱️ Timeout en página {page_count} (>5 segundos)")
+                    logger.error(f"⏱️ Timeout en página {page_count} (>8 segundos)")
                     if page_count == 1:
                         raise Exception("Timeout en primera página - API muy lenta o bloqueada")
                     else:
@@ -115,23 +111,28 @@ class PolymarketClient:
                         logger.warning(f"Continuando con {len(markets_list)} mercados")
                         break
 
-                # Verificar respuesta
-                if not isinstance(data, list) or len(data) == 0:
+                # Verificar respuesta (CLOB API devuelve {'data': [...], 'next_cursor': '...'})
+                if not isinstance(data, dict):
+                    logger.error(f"  Respuesta inesperada: {type(data)}")
+                    break
+
+                markets_data = data.get('data', [])
+                if not markets_data:
                     logger.info(f"  No hay más mercados (página {page_count})")
                     break
 
                 # Agregar mercados
-                batch_size = len(data)
-                markets_list.extend(data)
+                batch_size = len(markets_data)
+                markets_list.extend(markets_data)
                 logger.info(f"  ✓ Página {page_count}: {batch_size} mercados (total: {len(markets_list)})")
 
-                # Si recibimos menos del límite, no hay más páginas
-                if batch_size < limit:
-                    logger.info(f"  Última página alcanzada ({batch_size} < {limit})")
+                # Obtener cursor para siguiente página
+                next_cursor = data.get('next_cursor', '')
+                if not next_cursor:
+                    logger.info(f"  Última página alcanzada (sin next_cursor)")
                     break
 
-                offset += limit
-                time.sleep(0.2)  # Rate limiting mínimo
+                time.sleep(0.3)  # Rate limiting
 
             logger.info(f"✅ Polymarket: {len(markets_list)} mercados en {page_count} páginas")
             return markets_list

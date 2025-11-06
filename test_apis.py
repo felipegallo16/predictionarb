@@ -10,31 +10,36 @@ import requests
 import time
 
 def test_polymarket():
-    """Test rápido de Polymarket"""
-    print("🧪 Probando Polymarket...")
-    print("URL: https://gamma-api.polymarket.com/markets")
+    """Test rápido de Polymarket CLOB API"""
+    print("🧪 Probando Polymarket (CLOB API oficial)...")
+    print("URL: https://clob.polymarket.com/markets")
 
     try:
         start = time.time()
         response = requests.get(
-            "https://gamma-api.polymarket.com/markets",
-            params={'limit': 5, 'closed': 'false'},
-            timeout=5
+            "https://clob.polymarket.com/markets",
+            headers={
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+                'Accept': 'application/json'
+            },
+            timeout=8
         )
         elapsed = time.time() - start
 
         print(f"✅ Respuesta: {response.status_code} ({elapsed:.2f}s)")
         if response.status_code == 200:
             data = response.json()
-            print(f"✅ Mercados obtenidos: {len(data)}")
-            if data:
-                print(f"✅ Primer mercado: {data[0].get('question', 'N/A')[:50]}")
+            markets_data = data.get('data', [])
+            print(f"✅ Mercados obtenidos: {len(markets_data)}")
+            if markets_data:
+                print(f"✅ Primer mercado: {markets_data[0].get('question', 'N/A')[:50]}")
+                print(f"✅ Next cursor: {'Sí' if data.get('next_cursor') else 'No'}")
         else:
             print(f"❌ Error: {response.status_code}")
             print(f"   {response.text[:200]}")
 
     except requests.exceptions.Timeout:
-        print(f"⏱️ TIMEOUT después de 5 segundos")
+        print(f"⏱️ TIMEOUT después de 8 segundos")
     except Exception as e:
         print(f"❌ Error: {e}")
 
