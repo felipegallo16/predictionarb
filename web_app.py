@@ -16,6 +16,7 @@ from datetime import datetime
 import plotly.express as px
 import plotly.graph_objects as go
 from arbitrage_detector import ArbitrageDetector, PolymarketClient, KalshiClient
+from arbitrage_detector_quick import QuickArbitrageDetector
 import logging
 
 # Configurar página
@@ -68,9 +69,9 @@ with st.sidebar:
 
     similarity_threshold = st.slider(
         "Umbral de Similitud (%)",
-        min_value=50,
-        max_value=100,
-        value=80,
+        min_value=30,
+        max_value=90,
+        value=50,
         step=5,
         help="Porcentaje mínimo de similitud para emparejar mercados"
     )
@@ -128,7 +129,7 @@ with col2:
             progress_bar.progress(10)
             time.sleep(0.5)
 
-            detector = ArbitrageDetector(similarity_threshold=float(similarity_threshold))
+            detector = QuickArbitrageDetector(similarity_threshold=float(similarity_threshold))
 
             # Paso 2: Obtener mercados
             status_text.text("📡 Obteniendo mercados de Polymarket...")
@@ -386,8 +387,8 @@ else:
     st.info("""
     ### 👆 Haz clic en el botón de arriba para comenzar
 
-    El detector analizará **cientos de mercados reales** de Polymarket y Kalshi
-    para encontrar oportunidades de arbitraje en tiempo real.
+    El detector analizará **200 mercados reales** de Polymarket y Kalshi
+    para encontrar oportunidades de arbitraje en tiempo real. (Versión rápida)
 
     **¿Qué hace el detector?**
     1. 📡 Obtiene todos los mercados activos de ambas plataformas

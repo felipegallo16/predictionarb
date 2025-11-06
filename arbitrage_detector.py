@@ -11,7 +11,7 @@ Autor: Claude
 Versión: 2.0
 """
 
-from py_clob_client.client import ClobClient
+# Eliminado py-clob-client - usamos requests directo para evitar bloqueos
 import requests
 import pandas as pd
 from rapidfuzz import fuzz
@@ -39,51 +39,77 @@ logger = logging.getLogger(__name__)
 
 
 class PolymarketClient:
-    """Cliente para interactuar con la API de Polymarket usando py-clob-client oficial"""
+    """Cliente para interactuar con la API de Polymarket usando requests directo"""
 
     def __init__(self):
-        """Inicializa el cliente de Polymarket (sin autenticación para datos públicos)"""
-        self.client = ClobClient("https://clob.polymarket.com")
+        """Inicializa el cliente de Polymarket con timeout agresivo"""
+        self.base_url = "https://gamma-api.polymarket.com/markets"
+        self.timeout = 5  # Timeout agresivo de 5 segundos
         logger.info("✓ Cliente Polymarket inicializado")
 
     def get_markets(self) -> List[Dict]:
         """
-        Obtiene TODOS los mercados activos de Polymarket usando la API real
+        Obtiene TODOS los mercados activos de Polymarket usando requests directo
 
         Returns:
             Lista de mercados con su información real
         """
         markets_list = []
-        next_cursor = None
+        page = 1
+        offset = 0
+        limit = 100
 
         try:
-            logger.info("Obteniendo mercados reales de Polymarket...")
+            logger.info("Obteniendo mercados reales de Polymarket (Gamma API)...")
 
             while True:
-                # Hacer llamada a la API real
-                if next_cursor is None:
-                    response = self.client.get_markets()
-                else:
-                    response = self.client.get_markets(next_cursor=next_cursor)
+                # Parámetros para la API
+                params = {
+                    'limit': limit,
+                    'offset': offset,
+                    'active': True
+                }
 
-                # Verificar respuesta
-                if 'data' not in response or not response['data']:
+                logger.info(f"  Solicitando página {page} (offset: {offset})...")
+                
+                # Hacer request con timeout agresivo
+                response = requests.get(self.base_url, params=params, timeout=self.timeout)
+                logger.info(f"  Respuesta recibida: {response.status_code}")
+
+                if response.status_code != 200:
+                    logger.error(f"Error HTTP {response.status_code}: {response.text[:100]}")
+                    break
+
+                # Parsear JSON
+                data = response.json()
+                
+                # Polymarket devuelve lista directa
+                if not isinstance(data, list) or len(data) == 0:
+                    logger.info("  Sin más mercados disponibles")
                     break
 
                 # Agregar mercados
-                markets_list.extend(response['data'])
-                logger.info(f"  Obtenidos {len(response['data'])} mercados...")
+                markets_list.extend(data)
+                current_count = len(data)
+                total_count = len(markets_list)
+                
+                logger.info(f"  ✓ Página {page}: {current_count} mercados (total: {total_count})")
 
-                # Verificar si hay más páginas
-                next_cursor = response.get('next_cursor')
-                if not next_cursor:
+                # Si obtenemos menos del límite, es la última página
+                if current_count < limit:
                     break
 
-                time.sleep(0.3)  # Rate limiting respetuoso
+                # Preparar siguiente página
+                page += 1
+                offset += limit
+                time.sleep(0.2)  # Rate limiting respetuoso
 
-            logger.info(f"✓ Polymarket: {len(markets_list)} mercados reales obtenidos")
+            logger.info(f"✅ Polymarket: {len(markets_list)} mercados en {page} página(s)")
             return markets_list
 
+        except requests.exceptions.Timeout:
+            logger.error(f"⏱️ Timeout en página {page} (>{self.timeout} segundos)")
+            raise Exception("🚫 Error fatal: Timeout en primera página" if page == 1 else f"Timeout en página {page}")
         except Exception as e:
             logger.error(f"Error al obtener mercados de Polymarket: {e}")
             raise Exception(f"No se pudieron obtener datos reales de Polymarket: {e}")
@@ -155,8 +181,9 @@ class KalshiClient:
     BASE_URL = "https://api.elections.kalshi.com/trade-api/v2"
 
     def __init__(self):
-        """Inicializa el cliente de Kalshi (sin autenticación para datos públicos)"""
+        """Inicializa el cliente de Kalshi con timeout agresivo"""
         self.session = requests.Session()
+        self.timeout = 5  # Timeout agresivo de 5 segundos
         logger.info("✓ Cliente Kalshi inicializado")
 
     def get_markets(self) -> List[Dict]:
@@ -185,7 +212,7 @@ class KalshiClient:
 
                 # Llamada a la API real
                 url = f"{self.BASE_URL}/markets"
-                response = self.session.get(url, params=params, timeout=30)
+                response = self.session.get(url, params=params, timeout=self.timeout)
                 response.raise_for_status()
 
                 data = response.json()
