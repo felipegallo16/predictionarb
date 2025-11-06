@@ -204,13 +204,18 @@ class PolymarketClient:
 class KalshiClient:
     """Cliente para interactuar con la API pública de Kalshi"""
 
-    # API pública sin autenticación
+    # API pública oficial sin autenticación (docs.kalshi.com)
+    # Nota: api.elections.kalshi.com da acceso a TODOS los mercados (no solo elecciones)
     BASE_URL = "https://api.elections.kalshi.com/trade-api/v2"
 
     def __init__(self):
         """Inicializa el cliente de Kalshi (sin autenticación para datos públicos)"""
         self.session = requests.Session()
-        logger.info("✓ Cliente Kalshi inicializado")
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            'Accept': 'application/json'
+        })
+        logger.info("✓ Cliente Kalshi inicializado (API Pública)")
 
     def get_markets(self) -> List[Dict]:
         """

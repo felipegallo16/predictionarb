@@ -46,16 +46,21 @@ def test_polymarket():
     print()
 
 def test_kalshi():
-    """Test rápido de Kalshi"""
-    print("🧪 Probando Kalshi...")
+    """Test rápido de Kalshi API Pública"""
+    print("🧪 Probando Kalshi (API Pública oficial)...")
     print("URL: https://api.elections.kalshi.com/trade-api/v2/markets")
+    print("Nota: Este endpoint da acceso a TODOS los mercados (no solo elecciones)")
 
     try:
         start = time.time()
         response = requests.get(
             "https://api.elections.kalshi.com/trade-api/v2/markets",
             params={'limit': 5, 'status': 'open'},
-            timeout=5
+            headers={
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+                'Accept': 'application/json'
+            },
+            timeout=8
         )
         elapsed = time.time() - start
 
@@ -63,15 +68,17 @@ def test_kalshi():
         if response.status_code == 200:
             data = response.json()
             markets = data.get('markets', [])
+            cursor = data.get('cursor', None)
             print(f"✅ Mercados obtenidos: {len(markets)}")
             if markets:
                 print(f"✅ Primer mercado: {markets[0].get('title', 'N/A')[:50]}")
+                print(f"✅ Cursor para paginación: {'Sí' if cursor else 'No'}")
         else:
             print(f"❌ Error: {response.status_code}")
             print(f"   {response.text[:200]}")
 
     except requests.exceptions.Timeout:
-        print(f"⏱️ TIMEOUT después de 5 segundos")
+        print(f"⏱️ TIMEOUT después de 8 segundos")
     except Exception as e:
         print(f"❌ Error: {e}")
 
