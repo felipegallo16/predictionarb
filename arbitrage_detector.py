@@ -21,6 +21,7 @@ from datetime import datetime
 from tabulate import tabulate
 import logging
 from colorama import Fore, Style, init
+import signal
 
 # Inicializar colorama para salida con colores
 init(autoreset=True)
@@ -39,6 +40,7 @@ logger = logging.getLogger(__name__)
 
 
 class PolymarketClient:
+<<<<<<< HEAD
     """Cliente para interactuar con la API de Polymarket usando requests directo"""
 
     def __init__(self):
@@ -50,11 +52,31 @@ class PolymarketClient:
     def get_markets(self) -> List[Dict]:
         """
         Obtiene TODOS los mercados activos de Polymarket usando requests directo
+=======
+    """Cliente para interactuar con la API de Polymarket - CLOB API oficial"""
+
+    # CLOB API oficial de Polymarket
+    BASE_URL = "https://clob.polymarket.com"
+
+    def __init__(self):
+        """Inicializa el cliente de Polymarket (sin autenticación para datos públicos)"""
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            'Accept': 'application/json'
+        })
+        logger.info("✓ Cliente Polymarket inicializado (CLOB API)")
+
+    def get_markets(self) -> List[Dict]:
+        """
+        Obtiene TODOS los mercados activos de Polymarket usando CLOB API
+>>>>>>> 2fffd4e0baea8501f47ce0886a92ab0780f4c99b
 
         Returns:
             Lista de mercados con su información real
         """
         markets_list = []
+<<<<<<< HEAD
         page = 1
         offset = 0
         limit = 100
@@ -105,14 +127,90 @@ class PolymarketClient:
                 time.sleep(0.2)  # Rate limiting respetuoso
 
             logger.info(f"✅ Polymarket: {len(markets_list)} mercados en {page} página(s)")
+=======
+        next_cursor = ""
+        max_pages = 30  # Límite de seguridad
+        page_count = 0
+
+        try:
+            logger.info("Obteniendo mercados reales de Polymarket (CLOB API)...")
+
+            while page_count < max_pages:
+                page_count += 1
+
+                # Hacer llamada HTTP directa con timeout CORTO
+                try:
+                    # Endpoint oficial: /markets con next_cursor para paginación
+                    url = f"{self.BASE_URL}/markets"
+                    params = {'next_cursor': next_cursor} if next_cursor else {}
+
+                    logger.info(f"  Solicitando página {page_count}...")
+
+                    # TIMEOUT: 8 segundos (un poco más generoso para primera llamada)
+                    response = self.session.get(
+                        url,
+                        params=params,
+                        timeout=8
+                    )
+
+                    logger.info(f"  Respuesta recibida: {response.status_code}")
+
+                    # Si es 403 o error, fallar inmediatamente
+                    if response.status_code == 403:
+                        raise Exception(f"403 Forbidden - API bloqueada desde tu ubicación. Intenta con VPN.")
+
+                    response.raise_for_status()
+                    data = response.json()
+
+                except requests.exceptions.Timeout:
+                    logger.error(f"⏱️ Timeout en página {page_count} (>8 segundos)")
+                    if page_count == 1:
+                        raise Exception("Timeout en primera página - API muy lenta o bloqueada")
+                    else:
+                        logger.warning(f"Continuando con {len(markets_list)} mercados")
+                        break
+
+                except requests.exceptions.RequestException as e:
+                    logger.error(f"❌ Error HTTP en página {page_count}: {e}")
+                    if page_count == 1:
+                        raise
+                    else:
+                        logger.warning(f"Continuando con {len(markets_list)} mercados")
+                        break
+
+                # Verificar respuesta (CLOB API devuelve {'data': [...], 'next_cursor': '...'})
+                if not isinstance(data, dict):
+                    logger.error(f"  Respuesta inesperada: {type(data)}")
+                    break
+
+                markets_data = data.get('data', [])
+                if not markets_data:
+                    logger.info(f"  No hay más mercados (página {page_count})")
+                    break
+
+                # Agregar mercados
+                batch_size = len(markets_data)
+                markets_list.extend(markets_data)
+                logger.info(f"  ✓ Página {page_count}: {batch_size} mercados (total: {len(markets_list)})")
+
+                # Obtener cursor para siguiente página
+                next_cursor = data.get('next_cursor', '')
+                if not next_cursor:
+                    logger.info(f"  Última página alcanzada (sin next_cursor)")
+                    break
+
+                time.sleep(0.3)  # Rate limiting
+
+            logger.info(f"✅ Polymarket: {len(markets_list)} mercados en {page_count} páginas")
+>>>>>>> 2fffd4e0baea8501f47ce0886a92ab0780f4c99b
             return markets_list
 
         except requests.exceptions.Timeout:
             logger.error(f"⏱️ Timeout en página {page} (>{self.timeout} segundos)")
             raise Exception("🚫 Error fatal: Timeout en primera página" if page == 1 else f"Timeout en página {page}")
         except Exception as e:
-            logger.error(f"Error al obtener mercados de Polymarket: {e}")
-            raise Exception(f"No se pudieron obtener datos reales de Polymarket: {e}")
+            logger.error(f"💥 Error fatal en Polymarket: {e}")
+            raise Exception(f"No se pudieron obtener datos de Polymarket: {e}")
 
     def parse_market(self, market: Dict) -> Optional[Dict]:
         """
@@ -177,14 +275,23 @@ class PolymarketClient:
 class KalshiClient:
     """Cliente para interactuar con la API pública de Kalshi"""
 
-    # API pública sin autenticación
+    # API pública oficial sin autenticación (docs.kalshi.com)
+    # Nota: api.elections.kalshi.com da acceso a TODOS los mercados (no solo elecciones)
     BASE_URL = "https://api.elections.kalshi.com/trade-api/v2"
 
     def __init__(self):
         """Inicializa el cliente de Kalshi con timeout agresivo"""
         self.session = requests.Session()
+<<<<<<< HEAD
         self.timeout = 5  # Timeout agresivo de 5 segundos
         logger.info("✓ Cliente Kalshi inicializado")
+=======
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            'Accept': 'application/json'
+        })
+        logger.info("✓ Cliente Kalshi inicializado (API Pública)")
+>>>>>>> 2fffd4e0baea8501f47ce0886a92ab0780f4c99b
 
     def get_markets(self) -> List[Dict]:
         """
@@ -196,11 +303,15 @@ class KalshiClient:
         markets_list = []
         cursor = None
         limit = 1000  # Máximo permitido
+        max_pages = 20  # Límite de seguridad para evitar loops infinitos
+        page_count = 0
 
         try:
             logger.info("Obteniendo mercados reales de Kalshi...")
 
-            while True:
+            while page_count < max_pages:
+                page_count += 1
+
                 # Preparar parámetros
                 params = {
                     'limit': limit,
@@ -210,10 +321,44 @@ class KalshiClient:
                 if cursor:
                     params['cursor'] = cursor
 
+<<<<<<< HEAD
                 # Llamada a la API real
                 url = f"{self.BASE_URL}/markets"
                 response = self.session.get(url, params=params, timeout=self.timeout)
                 response.raise_for_status()
+=======
+                # Llamada a la API real con timeout CORTO
+                try:
+                    url = f"{self.BASE_URL}/markets"
+
+                    logger.info(f"  Solicitando página {page_count} de Kalshi...")
+
+                    # TIMEOUT AGRESIVO: 5 segundos
+                    response = self.session.get(url, params=params, timeout=5)
+
+                    logger.info(f"  Respuesta recibida: {response.status_code}")
+
+                    if response.status_code == 403:
+                        raise Exception(f"403 Forbidden - API bloqueada")
+
+                    response.raise_for_status()
+
+                except requests.exceptions.Timeout:
+                    logger.error(f"⏱️ Timeout en página {page_count} (>5 segundos)")
+                    if page_count == 1:
+                        raise Exception("Timeout en primera página - API muy lenta")
+                    else:
+                        logger.warning(f"Continuando con {len(markets_list)} mercados")
+                        break
+
+                except requests.exceptions.RequestException as e:
+                    logger.error(f"❌ Error HTTP en página {page_count}: {e}")
+                    if page_count == 1:
+                        raise
+                    else:
+                        logger.warning(f"Continuando con {len(markets_list)} mercados")
+                        break
+>>>>>>> 2fffd4e0baea8501f47ce0886a92ab0780f4c99b
 
                 data = response.json()
 
@@ -222,8 +367,9 @@ class KalshiClient:
                     break
 
                 # Agregar mercados
+                batch_size = len(data['markets'])
                 markets_list.extend(data['markets'])
-                logger.info(f"  Obtenidos {len(data['markets'])} mercados...")
+                logger.info(f"  Página {page_count}: {batch_size} mercados (total: {len(markets_list)})")
 
                 # Verificar si hay más páginas
                 cursor = data.get('cursor')
@@ -232,7 +378,7 @@ class KalshiClient:
 
                 time.sleep(0.3)  # Rate limiting respetuoso
 
-            logger.info(f"✓ Kalshi: {len(markets_list)} mercados reales obtenidos")
+            logger.info(f"✓ Kalshi: {len(markets_list)} mercados reales obtenidos en {page_count} páginas")
             return markets_list
 
         except requests.exceptions.RequestException as e:

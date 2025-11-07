@@ -49,6 +49,17 @@ pip install -r requirements.txt
 
 ## 🚀 Uso
 
+### 🎯 Dos Herramientas Disponibles
+
+Este proyecto incluye **dos herramientas independientes**:
+
+1. **Detector de Arbitraje** - Encuentra oportunidades de arbitraje entre Polymarket y Kalshi
+2. **Tracker de Traders** - Monitorea la actividad de traders específicos en Polymarket
+
+---
+
+## 📊 Herramienta 1: Detector de Arbitraje
+
 ### Opción 1: Interfaz Web (Recomendado) 🌐
 
 **Más fácil y visual** - Interfaz web completa con gráficos:
@@ -84,6 +95,82 @@ El script automáticamente:
 - Descargará TODOS los mercados activos reales
 - Detectará oportunidades de arbitraje con datos en vivo
 - Exportará resultados a CSV y JSON
+
+---
+
+## 🔍 Herramienta 2: Tracker de Traders
+
+**Monitorea la actividad de traders específicos en tiempo real**
+
+### ¿Qué hace?
+
+Detecta **automáticamente** cuando traders específicos:
+- ✅ Realizan nuevos trades (BUY/SELL)
+- ✅ Abren o cierran posiciones
+- ✅ Ejecutan cualquier transacción onchain
+- ✅ Cambian sus holdings
+
+**Cobertura**: 100% de todas las actividades onchain
+
+### Inicio Rápido
+
+#### 1. Configurar traders a monitorear
+
+Edita `traders.json` con los wallet addresses que quieres trackear:
+
+```json
+{
+  "traders": [
+    {
+      "name": "Trader Name",
+      "username": "username",
+      "wallet": "0x1234567890abcdef1234567890abcdef12345678",
+      "notes": "Smart money trader"
+    }
+  ]
+}
+```
+
+**¿Cómo obtener wallet addresses?**
+1. Ve a [Polymarket Leaderboard](https://polymarket.com/leaderboard)
+2. Busca el trader y ve a su perfil
+3. El wallet address está en la URL: `polymarket.com/profile/0x...`
+
+#### 2. Ejecutar el tracker
+
+```bash
+python3 trader_tracker.py
+```
+
+**Opciones**:
+1. Monitoreo continuo (cada 5 minutos)
+2. Verificación única
+3. Ver resumen de posiciones actuales
+
+### Ejemplo de Output
+
+```
+╔═══════════════════════════════════════════════════════════════
+║ 🔔 NUEVA ACTIVIDAD DETECTADA
+╠═══════════════════════════════════════════════════════════════
+║ Trader:       John Doe
+║ Tipo:         TRADE
+║ Mercado:      Will Trump win 2024 Presidential Election?
+║ Lado:         BUY
+║ Outcome:      YES
+║ USDC:         $2,500.00
+║ Tokens:       4,310.34
+║ Timestamp:    2025-11-07 14:32:15
+╚═══════════════════════════════════════════════════════════════
+```
+
+### Documentación Completa
+
+Para más detalles sobre el tracker de traders:
+- **Guía de Usuario**: [TRADER_TRACKING_README.md](TRADER_TRACKING_README.md)
+- **Investigación Técnica**: [TRADER_TRACKING_RESEARCH.md](TRADER_TRACKING_RESEARCH.md)
+
+---
 
 ## ⚠️ Restricciones Geográficas y de Red
 
@@ -262,27 +349,72 @@ while True:
 - **Datos**: 100% reales en tiempo real
 - **Nota**: A pesar del subdominio "elections", da acceso a TODOS los mercados (economía, clima, tech, etc.)
 
-## 📝 Estructura del código
+## 📝 Estructura del Proyecto
+
+```
+predictionarb/
+│
+├── 📊 DETECTOR DE ARBITRAJE
+│   ├── arbitrage_detector.py    # Script principal de arbitraje
+│   ├── web_app.py                # Interfaz web (Streamlit)
+│   ├── test_apis.py              # Herramienta de diagnóstico
+│   └── WEB_INTERFACE.md          # Guía interfaz web
+│
+├── 🔍 TRACKER DE TRADERS
+│   ├── trader_tracker.py         # Script de monitoreo de traders
+│   ├── traders.json              # Configuración de traders
+│   ├── TRADER_TRACKING_README.md      # Guía de usuario
+│   └── TRADER_TRACKING_RESEARCH.md    # Investigación técnica
+│
+├── 📚 DOCUMENTACIÓN
+│   ├── README.md                 # Este archivo
+│   ├── API_ENDPOINTS.md          # Documentación de APIs
+│   └── requirements.txt          # Dependencias Python
+│
+└── 📁 OUTPUTS (generados)
+    ├── arbitrage_opportunities.csv
+    ├── arbitrage_opportunities.json
+    ├── arbitrage.log
+    └── trader_tracker.log
+```
+
+### Estructura del Código - Arbitrage Detector
 
 ```
 arbitrage_detector.py
 │
 ├── PolymarketClient
-│   ├── get_markets()      # Obtiene mercados reales de Polymarket (py-clob-client)
+│   ├── get_markets()      # Obtiene mercados reales de Polymarket
 │   └── parse_market()     # Parsea formato estándar
 │
 ├── KalshiClient
-│   ├── get_markets()      # Obtiene mercados reales de Kalshi (requests)
+│   ├── get_markets()      # Obtiene mercados reales de Kalshi
 │   └── parse_market()     # Parsea formato estándar
 │
 └── ArbitrageDetector
-    ├── fetch_all_markets()      # Obtiene de ambas plataformas (REALES)
+    ├── fetch_all_markets()      # Obtiene de ambas plataformas
     ├── match_markets()          # Empareja mercados similares
-    ├── calculate_arbitrage()    # Calcula spreads con datos reales
+    ├── calculate_arbitrage()    # Calcula spreads
     ├── display_opportunities()  # Muestra resultados
     ├── export_to_csv()          # Exporta a CSV
     ├── export_to_json()         # Exporta a JSON
     └── run()                    # Ejecuta proceso completo
+```
+
+### Estructura del Código - Trader Tracker
+
+```
+trader_tracker.py
+│
+└── PolymarketTraderTracker
+    ├── load_traders()           # Carga traders.json
+    ├── get_trader_activity()    # Obtiene actividad de trader
+    ├── get_trader_positions()   # Obtiene posiciones actuales
+    ├── get_trader_value()       # Obtiene valor total en USD
+    ├── check_new_activity()     # Detecta actividad nueva
+    ├── display_trader_summary() # Muestra resumen
+    ├── monitor_once()           # Ciclo único de monitoreo
+    └── monitor_continuous()     # Monitoreo continuo
 ```
 
 ## 🎨 Dependencias
